@@ -13,9 +13,9 @@
 #include "aubatch.h"
 
 /* Command Line Processing */
-#define NUM_OF_CMD   5   /* The number of submitted jobs   */
-#define CMD_BUF_SIZE 10  /* The size of the command queueu */
-#define MAX_CMD_LEN  512 /* The longest scheduler length */
+#define NUM_OF_JOBS     5   /* The number of submitted jobs   */
+#define JOB_BUFFER_SIZE 10  /* The size of the command queue */
+#define MAX_JOB_LEN     512 /* The longest scheduler length */
 /* Error Codes */
 #define INVALID  1
 #define OVERFLOW 2
@@ -25,22 +25,22 @@
 
 /* Global shared variables */
 /* Mutexes and CVs */
-pthread_mutex_t cmd_queue_mutex;     /* Mutex for critical sections */
-pthread_mutex_t cmd_queue_run_mutex; /* Mutext for menu to scheduler */
-pthread_cond_t cmd_buffer_not_full;  /* Buffer not full CV  */
-pthread_cond_t cmd_buffer_not_empty; /* Buffer not empty CV */
+pthread_mutex_t job_queue_mutex;     /* Mutex for critical sections */
+pthread_mutex_t job_queue_run_mutex; /* Mutext for menu to scheduler */
+pthread_cond_t job_buffer_not_full;  /* Buffer not full CV  */
+pthread_cond_t job_buffer_not_empty; /* Buffer not empty CV */
 pthread_cond_t job_submit;	        /* Job submit CV */
 
-unsigned int buffer_head;
-unsigned int buffer_tail;
+unsigned int job_buffer_head;
+unsigned int job_buffer_tail;
 unsigned int count;
 unsigned int lock = 0;
 int policy = 0;
 
-char cmd[30];
+char job[30];
 char *param_list[3];
 
-struct queue *cmd_buffer[CMD_BUF_SIZE];
+struct queue *job_buffer[JOB_BUFFER_SIZE];
 
 /*
  *
@@ -56,36 +56,51 @@ void enforce_policy(void)
 	{
 		/* FCFS */
 		case 0:
+			pthread_mutex_lock(&job_queue_run_mutex);
+			// TODO Add sorting by arrival time
+			pthread_mutex_unlock(&job_queue_run_mutex);
 			break;
-		/* Sorting Job First */
+		/* Sorting by Burst Time */
 		case 1:
-			for(i=0;i<buffer_head-1;i++)
+			if (job_buffer_head == 0)
 			{
-				for(j=0;j<buffer_head-i-1;j++)
+				break;
+			}
+			pthread_mutex_lock(&job_queue_run_mutex);
+			for(i = 0; i < job_buffer_head - 1 ; i++)
+			{
+				for(j = 0; j < job_buffer_head - i - 1; j++)
 				{
-					if(cmd_buffer[j]->burst_time > cmd_buffer[j+1]->burst_time)
+					if(job_buffer[j]->burst_time > job_buffer[j+1]->burst_time)
 					{
-						key = cmd_buffer[j];
-						cmd_buffer[j] = cmd_buffer[j+1];
-						cmd_buffer[j+1] = key;
+						key = job_buffer[j];
+						job_buffer[j] = job_buffer[j+1];
+						job_buffer[j+1] = key;
 					} 
 				}	
 			}
+			pthread_mutex_unlock(&job_queue_run_mutex);
 			break;
-		/* Sorting Priority */
+		/* Sorting by Priority */
 		case 2:
-			for(i=0;i<buffer_head-1;i++)
+			pthread_mutex_lock(&job_queue_run_mutex);
+			if (job_buffer_head == 0)
 			{
-				for(j=0;j<buffer_head-i-1;j++)
+				break;
+			}
+			for(i = 0; i < job_buffer_head - 1; i++)
+			{
+				for(j = 0; j < job_buffer_head - i - 1; j++)
 				{
-					if(cmd_buffer[j]->priority > cmd_buffer[j+1]->priority)
+					if(job_buffer[j]->priority > job_buffer[j+1]->priority)
 					{
-						key = cmd_buffer[j];
-						cmd_buffer[j] = cmd_buffer[j+1];
-						cmd_buffer[j+1] = key;
+						key = job_buffer[j];
+						job_buffer[j] = job_buffer[j+1];
+						job_buffer[j+1] = key;
 					} 
 				}	
 			}
+			pthread_mutex_unlock(&job_queue_run_mutex);
 			break;
 		/* Unknown */
 		default:
@@ -98,50 +113,46 @@ void enforce_policy(void)
  */
 void *execv_call(struct queue *param)
 {
-	char *arg[5];
+	char *args[3];
 	pid_t pid;
 
-	arg[0] = "process";
-	arg[1] = param->name;
-
-	sprintf(arg[2],"%d",param->burst_time);
-	sprintf(arg[3],"%d",param->priority);
-
-	arg[4] = NULL;
+	args[0] = param->name;
+	sprintf(args[1], "%d", param->burst_time);
+	args[2] = NULL;
 
 	/*Fork() to host an execv() process*/
 	switch ((pid = fork()))
   	{
    		case -1:
-   	 		perror("fork failed");
-      		break;
-    	case 0:
-			/* Execution of execv() */
-			if(execv("process",arg)==-1)
-			{ 
-				
-				perror("Fail\n");
-				exit(0);
-			}
-      		break;
-    	default:
-			pthread_mutex_unlock(&cmd_queue_mutex);
-			sleep(atoi(arg[2])); /* Make this process last till process finishes */
-			pthread_mutex_lock(&cmd_queue_mutex);
-      		break;
-  	}
+   	  		perror("fork failed");
+       		break;
+     	case 0:
+	 		/* Execution of execv() */
+	 		if(execv(args[0], args)==-1)
+	 		{ 
+	 			perror("Fail\n");
+	 			exit(0);
+	 		}
+       		break;
+     	default:
+			pthread_mutex_lock(&job_queue_run_mutex);
+			sleep(param->burst_time);
+			pthread_mutex_unlock(&job_queue_run_mutex);
+       		break;
+  	 }
+
 	return 0;
 }
 
 /*
  *
  */
-int cmd_run(int nargs, char **args) 
+int run(int nargs, char **args) 
 {
 	int i=1;
 	int counter = nargs;
 
-	pthread_mutex_lock(&cmd_queue_run_mutex);
+	pthread_mutex_lock(&job_queue_run_mutex);
 
 	if (nargs != 4) 
 	{
@@ -150,27 +161,45 @@ int cmd_run(int nargs, char **args)
 	}
 
 	counter--;
-	strcpy(cmd, "./process");
+	strcpy(job, args[0]);
 
 	while(counter>0)
 	{
 		param_list[i-1] = args[i];
-		strcat(cmd, param_list[i-1]);
-		strcat(cmd," ");
+		strcat(job, param_list[i-1]);
+		strcat(job," ");
 		counter--;
 		i++;
 	}
 
 	lock++;
 	pthread_cond_signal(&job_submit);
-	pthread_mutex_unlock(&cmd_queue_run_mutex);
+	pthread_mutex_unlock(&job_queue_run_mutex);
 }
 
-/* Exit command */
 /*
  *
  */
-int cmd_exit(int nargs, char **args) 
+int list(int nargs, char **args)
+{
+	(void)nargs;
+	(void)args;
+
+	int i;
+
+	printf("Job Name\t Burst Time\t Priority\n");
+
+	for(i=0; i < job_buffer_head; i++)
+	{
+		printf("%s\t \t%d\t \t%d\n", job_buffer[i]->name, job_buffer[i]->burst_time, job_buffer[i]->priority);
+	}
+}
+
+/* Quit command */
+/*
+ *
+ */
+int quit(int nargs, char **args) 
 {
 	printf("Thank you for using AUbatch!\n");
     exit(0);
@@ -180,13 +209,14 @@ int cmd_exit(int nargs, char **args)
 /*
  *
  */
-int cmd_fcfs(int n, char **a)
+int fcfs(int nargs, char **args)
 {
-	(void)n;
-	(void)a;
+	(void)nargs;
+	(void)args;
 
 	policy = 0;
 	printf("Policy is changed to FCFS\n");
+	enforce_policy();
 
 	return 0;
 }
@@ -195,13 +225,14 @@ int cmd_fcfs(int n, char **a)
 /*
  *
  */
-int cmd_sjf(int n, char **a)
+int sjf(int nargs, char **args)
 {
-	(void)n;
-	(void)a;
+	(void)nargs;
+	(void)args;
 
 	policy = 1;
 	printf("Policy is changed to SJF\n");
+	enforce_policy();
 
 	return 0;
 }
@@ -210,13 +241,14 @@ int cmd_sjf(int n, char **a)
 /*
  *
  */
-int cmd_priority(int n, char **a)
+int priority(int nargs, char **args)
 {
-	(void)n;
-	(void)a;
+	(void)nargs;
+	(void)args;
 
 	policy = 2;
 	printf("Policy is changed to Priority scheduling\n");
+	enforce_policy();
 
 	return 0;
 }
@@ -227,26 +259,28 @@ int cmd_priority(int n, char **a)
  */
 static struct 
 {
-	const char *cmd_name;
+	const char *command_name;
 	int (*func)(int nargs, char **args);
 } 
-cmd_dict[] = 
+commands_dict[] = 
 {
-	{ "?\n",        cmd_help_menu },
-	{ "h\n",        cmd_help_menu },
-	{ "help\n",     cmd_help_menu },
-	{ "run",        cmd_run },
-    { "fcfs\n",     cmd_fcfs },
-	{ "sjf\n",      cmd_sjf },
-	{ "priority\n", cmd_priority },
-	{ "exit\n",	    cmd_exit },
+	{ "?\n",        display_help_menu },
+	{ "h\n",        display_help_menu },
+	{ "help\n",     display_help_menu },
+	{ "run",        run },
+	{ "list\n",     list },
+    { "fcfs\n",     fcfs },
+	{ "sjf\n",      sjf },
+	{ "priority\n", priority },
+	{ "quit\n",	    quit },
+	{ "q\n",	    quit },
 };
 
 /* Execute a command */
 /*
  *
  */
-int cmd_dispatch(char *cmd)
+int execute_command(char *job_arg)
 {
 	time_t beforesecs, aftersecs, secs;
 	u_int32_t beforensecs, afternsecs, nsecs;
@@ -257,7 +291,7 @@ int cmd_dispatch(char *cmd)
 	char *context;
  	int i, result;
 
-	for (word = strtok_r(cmd, " ", &context); word != NULL; word = strtok_r(NULL, " ", &context)) 
+	for (word = strtok_r(job_arg, " ", &context); word != NULL; word = strtok_r(NULL, " ", &context)) 
 	{
 		if (nargs >= MAXARGS) 
 		{
@@ -273,12 +307,12 @@ int cmd_dispatch(char *cmd)
 		return 0;
 	}
 
-	for (i=0; cmd_dict[i].cmd_name; i++) 
+	for (i=0; commands_dict[i].command_name; i++) 
 	{
-		if (*cmd_dict[i].cmd_name && !strcmp(args[0], cmd_dict[i].cmd_name)) 
+		if (*commands_dict[i].command_name && !strcmp(args[0], commands_dict[i].command_name)) 
 		{
-			assert(cmd_dict[i].func!=NULL);
-			result = cmd_dict[i].func(nargs, args);
+			assert(commands_dict[i].func!=NULL);
+			result = commands_dict[i].func(nargs, args);
 			return result;
 		}
 	}
@@ -293,50 +327,53 @@ int cmd_dispatch(char *cmd)
 void *menu( void *ptr)
 {
 	char *buffer;
-    size_t bufsize = 64;
+    size_t buffer_size = 64;
         
-    buffer = (char*) malloc(bufsize * sizeof(char));
+    buffer = (char*) malloc(buffer_size * sizeof(char));
     if (buffer == NULL) 
     {
  	    perror("malloc buffer failed");
  	    exit(1);
 	}
 
-    char *menu = "Welcome to AUbatch scheduler\n" 
-         "Please type h for help menu\n"
+    char *menu_body = "Welcome Matthew's AUBatch job scheduler\n" 
+         "Please type 'help' or 'h' to find out more about the AUBatch commands\n"
          "*******************************************************************\n"
-         "HOW TO USE?\n"
-         "Type \"run init <time> <\"1\">\"\n"
-         "It allows user to choose how much time they need to give input arguments\n"
-         "Choose policy and type it i.e. sjf or pri\n"
-         "Submit jobs with \"run <Jobname> <Burst_time> <priority>\"\n"
-         "Wait while the time you chose to add jobs finish\n"
+         "Submit jobs with \"run <job> <time> <priority>\"\n"
+		 "			submit a job named: <job>\n"
+		 "			estimated execution time is <time>\n"
+		 "			job priority is <priority>\n"
+         "Then please wait while the job(s) finish\n"
          "*******************************************************************\n";
 	
-	printf("%s", menu);
+	printf("%s", menu_body);
 
     while (1) 
     {
 		printf("> ");
-		getline(&buffer, &bufsize, stdin);
-		cmd_dispatch(buffer);
+		getline(&buffer, &buffer_size, stdin);
+		execute_command(buffer);
 	}
 }
 
 /* Help menu */
-int cmd_help_menu(int n, char **a)
+int display_help_menu(int nargs, char **args)
 {
-	(void)n;
-	(void)a;
+	(void)nargs;
+	(void)args;
 
-    char *help_menu = "\t[run] <process> <expected_runtime> <priority>\n"
-        "\t[help] Display help menu\n"
-        "\t[fcfs] Set scheduler to FCFS policy\n"
-        "\t[sjf] Set scheduler SJF policy\n"
-        "\t[priority] Set scheduler Priority policy\n"
-        "\t[exit] Exit AUbatch\n";
+    char *help_menu_body = 
+		"\trun <job> <time> <priority>\"\n"
+		"			submit a job named: <job>\n"
+		"			estimated execution time is <time>\n"
+		"			job priority is <priority>\n"
+        "\thelp - Display help menu\n"
+        "\tfcfs - Set scheduler to FCFS policy\n"
+        "\tsjf - Set scheduler SJF policy\n"
+        "\tpriority - Set scheduler Priority policy\n"
+        "\tquit - Quit AUbatch\n";
 
-	printf("%s", help_menu);
+	printf("%s", help_menu_body);
 
 	return 0;
 }
@@ -351,55 +388,49 @@ void *dispatcher(void *ptr)
  	char *arg[5];
 	pid_t pid;
 
-    for (i = 0; i < NUM_OF_CMD; i++) 
+    for (i = 0; i < NUM_OF_JOBS; i++) 
     {
-        pthread_mutex_lock(&cmd_queue_mutex);
+        pthread_mutex_lock(&job_queue_mutex);
         while (count == 0) 
         {
-            pthread_cond_wait(&cmd_buffer_not_empty, &cmd_queue_mutex);
+            pthread_cond_wait(&job_buffer_not_empty, &job_queue_mutex);
         }
 
 	    if(policy == 0)
         {
-	        execv_call(cmd_buffer[buffer_tail]);
+	        execv_call(job_buffer[job_buffer_tail]);
             count--;
-	        buffer_tail++;
+	        job_buffer_tail++;
 	    }
 	
 	    if(policy == 1)
         {
 		    enforce_policy();
-
-		    for(buffer_tail=0; count != 0; buffer_tail++)
+		    for(job_buffer_tail=0; count != 0; job_buffer_tail++)
             {
-		        execv_call(cmd_buffer[buffer_tail]);
+		        execv_call(job_buffer[job_buffer_tail]);
 		        count--;
 		    }
-
-	        sleep(1);
-	        printf("Simulation of SJF is finished\nPRESS q to quit\n");
-	        pthread_mutex_unlock(&cmd_queue_mutex);
+	        pthread_mutex_unlock(&job_queue_mutex);
 	    }
    	
 	    if(policy == 2)
         {
 		    enforce_policy();
-		    for(buffer_tail=0; count!=0; buffer_tail++)
+		    for(job_buffer_tail=0; count != 0; job_buffer_tail++)
             {
-		        execv_call(cmd_buffer[buffer_tail]);
+		        execv_call(job_buffer[job_buffer_tail]);
 		        count--;
 		    }
-	        sleep(1);
-	        printf("Simulation of Priority is finished\nPRESS q to quit\n");
-	        pthread_mutex_unlock(&cmd_queue_mutex);
+	        pthread_mutex_unlock(&job_queue_mutex);
 	    }
 
-        if (buffer_tail == CMD_BUF_SIZE)
-            buffer_tail = 0;
+        if (job_buffer_tail == JOB_BUFFER_SIZE)
+            job_buffer_tail = 0;
 
-        pthread_cond_signal(&cmd_buffer_not_full);
-        /* Unlock the sharefd command queue */
-        pthread_mutex_unlock(&cmd_queue_mutex);
+        pthread_cond_signal(&job_buffer_not_full);
+        /* Unlock the shared job queue */
+        pthread_mutex_unlock(&job_queue_mutex);
 
     }/* end for */
 }
@@ -409,43 +440,43 @@ void *dispatcher(void *ptr)
  */
 void *scheduler(void *ptr){
     char *message;
-    struct queue *temp_cmd;
+    struct queue *temp_job;
     unsigned int i;
     char num_str[8];
     size_t command_size;
 
-    for (i = 0; i < NUM_OF_CMD; i++) 
+    for (i = 0; i < NUM_OF_JOBS; i++) 
     {    
-        pthread_mutex_lock(&cmd_queue_mutex);
-        while (count == CMD_BUF_SIZE) 
+        pthread_mutex_lock(&job_queue_mutex);
+        while (count == JOB_BUFFER_SIZE) 
         {
-            pthread_cond_wait(&cmd_buffer_not_full, &cmd_queue_mutex);
+            pthread_cond_wait(&job_buffer_not_full, &job_queue_mutex);
         }
 
-        pthread_mutex_unlock(&cmd_queue_mutex);
-        temp_cmd = malloc(MAX_CMD_LEN*sizeof(struct queue));
+        pthread_mutex_unlock(&job_queue_mutex);
+        temp_job = malloc(MAX_JOB_LEN*sizeof(struct queue));
 
         while(lock == 0)
         {
-		    pthread_cond_wait(&job_submit, &cmd_queue_run_mutex);	
+		    pthread_cond_wait(&job_submit, &job_queue_run_mutex);	
 	    }
 	    lock--;
 
-        pthread_mutex_lock(&cmd_queue_mutex); 
-	    strcpy(temp_cmd->name, param_list[0]);
+        pthread_mutex_lock(&job_queue_mutex); 
+	    strcpy(temp_job->name, param_list[0]);
 
-	    temp_cmd->burst_time = atoi(param_list[1]);
-	    temp_cmd->priority = atoi(param_list[2]);   
-        cmd_buffer[buffer_head] = temp_cmd;
+	    temp_job->burst_time = atoi(param_list[1]);
+	    temp_job->priority = atoi(param_list[2]);   
+        job_buffer[job_buffer_head] = temp_job;
         count++;
         /* Move buf_head_s forward, this is a circular queue */ 
-        buffer_head++;
-        if (buffer_head == CMD_BUF_SIZE)
-            buffer_head = 0;
+        job_buffer_head = job_buffer_head++ % JOB_BUFFER_SIZE;
+        // if (job_buffer_head == JOB_BUFFER_SIZE)
+        //     job_buffer_head = 0;
 	
-        pthread_cond_signal(&cmd_buffer_not_empty);  
+        pthread_cond_signal(&job_buffer_not_empty);  
         /* Unlock the shared command queue */
-        pthread_mutex_unlock(&cmd_queue_mutex);
+        pthread_mutex_unlock(&job_queue_mutex);
     }
 }
 
@@ -467,14 +498,14 @@ int main()
 
     /* Create two independent threads:command and executors */
     menu_return = pthread_create(&menu_thread, NULL, menu, (void*) menu_message);
+	scheduler_return = pthread_create(&scheduler_thread, NULL, scheduler, (void*) scheduler_message);
     dispatcher_return = pthread_create(&dispatcher_thread, NULL, dispatcher, (void*) dispatcher_message);
-    scheduler_return = pthread_create(&scheduler_thread, NULL, scheduler, (void*) scheduler_message);
 
     /* Initialize the  the two condition variables */
-    pthread_mutex_init(&cmd_queue_mutex, NULL);
-    pthread_mutex_init(&cmd_queue_run_mutex, NULL);
-    pthread_cond_init(&cmd_buffer_not_full, NULL);
-    pthread_cond_init(&cmd_buffer_not_empty, NULL);
+    pthread_mutex_init(&job_queue_mutex, NULL);
+    pthread_mutex_init(&job_queue_run_mutex, NULL);
+    pthread_cond_init(&job_buffer_not_full, NULL);
+    pthread_cond_init(&job_buffer_not_empty, NULL);
     pthread_cond_init(&job_submit, NULL);
      
     pthread_join(dispatcher_thread, NULL);
