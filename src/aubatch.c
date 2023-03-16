@@ -2,14 +2,6 @@
  * 
  */
 
-#include <assert.h>
-#include <pthread.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include "aubatch.h"
 
 /* Command Line Processing */
@@ -20,22 +12,26 @@
 #define INVALID  1
 #define OVERFLOW 2
 /* Maximums */
-#define MAXARGS    4 
-#define MAXCMDLGTH 64    
+#define MAXARGS 4   
 
 /* Global shared variables */
 /* Mutexes and CVs */
 pthread_mutex_t job_queue_mutex;     /* Mutex for critical sections */
-pthread_mutex_t job_queue_run_mutex; /* Mutext for menu to scheduler */
 pthread_cond_t job_buffer_not_full;  /* Buffer not full CV  */
 pthread_cond_t job_buffer_not_empty; /* Buffer not empty CV */
-pthread_cond_t job_submit;	        /* Job submit CV */
+pthread_cond_t job_submit;	         /* Job submit CV */
 
-unsigned int job_buffer_head;
-unsigned int job_buffer_tail;
-unsigned int count;
+unsigned int job_buffer_head = 0;
+unsigned int job_buffer_tail = 0;
+unsigned int count = 0;
 unsigned int lock = 0;
-int policy = 0;
+unsigned int policy = 0;
+
+unsigned int num_jobs_submitted = 0;
+float avg_turnaround_time = 0.0;
+float avg_cpu_time = 0.0;
+float avg_waiting_time = 0.0;
+float throughput = 0.0;
 
 char job[30];
 char *param_list[3];
@@ -52,26 +48,20 @@ void enforce_policy(void)
 	int i = 0,j;
 	
 	/* Check the scheduling  */
+	pthread_mutex_lock(&job_queue_mutex);
 	switch(policy)
 	{
 		/* FCFS */
 		case 0:
-			pthread_mutex_lock(&job_queue_run_mutex);
-			// TODO Add sorting by arrival time
-			pthread_mutex_unlock(&job_queue_run_mutex);
-			break;
-		/* Sorting by Burst Time */
-		case 1:
 			if (job_buffer_head == 0)
 			{
 				break;
 			}
-			pthread_mutex_lock(&job_queue_run_mutex);
-			for(i = 0; i < job_buffer_head - 1 ; i++)
+			for(i = job_buffer_tail; i < job_buffer_head - 1; ++i)
 			{
-				for(j = 0; j < job_buffer_head - i - 1; j++)
+				for(j = job_buffer_tail; j < job_buffer_head - i - 1; ++j)
 				{
-					if(job_buffer[j]->burst_time > job_buffer[j+1]->burst_time)
+					if(job_buffer[j]->arrival_time > job_buffer[j+1]->arrival_time)
 					{
 						key = job_buffer[j];
 						job_buffer[j] = job_buffer[j+1];
@@ -79,18 +69,35 @@ void enforce_policy(void)
 					} 
 				}	
 			}
-			pthread_mutex_unlock(&job_queue_run_mutex);
 			break;
-		/* Sorting by Priority */
-		case 2:
-			pthread_mutex_lock(&job_queue_run_mutex);
+		/* Sorting by CPU Time */
+		case 1:
 			if (job_buffer_head == 0)
 			{
 				break;
 			}
-			for(i = 0; i < job_buffer_head - 1; i++)
+			for(i = job_buffer_tail; i < job_buffer_head - 1 ; ++i)
 			{
-				for(j = 0; j < job_buffer_head - i - 1; j++)
+				for(j = job_buffer_tail; j < job_buffer_head - i - 1; ++j)
+				{
+					if(job_buffer[j]->cpu_time > job_buffer[j+1]->cpu_time)
+					{
+						key = job_buffer[j];
+						job_buffer[j] = job_buffer[j+1];
+						job_buffer[j+1] = key;
+					} 
+				}	
+			}
+			break;
+		/* Sorting by Priority */
+		case 2:
+			if (job_buffer_head == 0)
+			{
+				break;
+			}
+			for(i = job_buffer_tail; i < job_buffer_head - 1; ++i)
+			{
+				for(j = job_buffer_tail; j < job_buffer_head - i - 1; ++j)
 				{
 					if(job_buffer[j]->priority > job_buffer[j+1]->priority)
 					{
@@ -100,12 +107,12 @@ void enforce_policy(void)
 					} 
 				}	
 			}
-			pthread_mutex_unlock(&job_queue_run_mutex);
 			break;
 		/* Unknown */
 		default:
 			break;	
 	}
+	pthread_mutex_unlock(&job_queue_mutex);
 }
 
 /*
@@ -117,29 +124,37 @@ void *execv_call(struct queue *param)
 	pid_t pid;
 
 	args[0] = param->name;
-	sprintf(args[1], "%d", param->burst_time);
+	sprintf(args[1], "%d", param->cpu_time);
 	args[2] = NULL;
+	//args[1] = NULL;
 
-	/*Fork() to host an execv() process*/
-	switch ((pid = fork()))
-  	{
-   		case -1:
-   	  		perror("fork failed");
-       		break;
+	/* fork() an execv() process */
+	 switch ((pid = fork()))
+  	 {
+		/* If fork() fails */
+   	 	case -1:
+			/* Throw an error */
+   	   		perror("fork failed");
+        		break;
      	case 0:
-	 		/* Execution of execv() */
-	 		if(execv(args[0], args)==-1)
-	 		{ 
+	 		/* Set the run time */
+			time(&param->run_time);
+			/* Execution of execv() */
+			if(execv(args[0], args)==-1)
+			{ 
 	 			perror("Fail\n");
 	 			exit(0);
-	 		}
+			}
+			/* Sleep this thread until the exe is complete */
+			sleep(param->cpu_time);
+			/* Set the complete time */
+			time(&param->complete_time);
+      	default:
+	 		//  pthread_mutex_lock(&job_queue_run_mutex);
+	 		//  sleep(param->burst_time);
+	 		//  pthread_mutex_unlock(&job_queue_run_mutex);
        		break;
-     	default:
-			pthread_mutex_lock(&job_queue_run_mutex);
-			sleep(param->burst_time);
-			pthread_mutex_unlock(&job_queue_run_mutex);
-       		break;
-  	 }
+  	}
 
 	return 0;
 }
@@ -152,7 +167,7 @@ int run(int nargs, char **args)
 	int i=1;
 	int counter = nargs;
 
-	pthread_mutex_lock(&job_queue_run_mutex);
+	pthread_mutex_lock(&job_queue_mutex);
 
 	if (nargs != 4) 
 	{
@@ -173,41 +188,147 @@ int run(int nargs, char **args)
 	}
 
 	lock++;
+	num_jobs_submitted++;
 	pthread_cond_signal(&job_submit);
-	pthread_mutex_unlock(&job_queue_run_mutex);
+	pthread_mutex_unlock(&job_queue_mutex);
 }
 
 /*
- *
+ * List the current job queue information
  */
 int list(int nargs, char **args)
 {
 	(void)nargs;
 	(void)args;
 
-	int i;
+	int i, j, num_jobs_in_queue;
+	char* sch_policy;
 
-	printf("Job Name\t Burst Time\t Priority\n");
-
-	for(i=0; i < job_buffer_head; i++)
+	/* Determine the number of jobs in the queue */
+	num_jobs_in_queue = get_num_jobs_in_queue();
+	if (num_jobs_in_queue < 0 || num_jobs_in_queue > JOB_BUFFER_SIZE)
 	{
-		printf("%s\t \t%d\t \t%d\n", job_buffer[i]->name, job_buffer[i]->burst_time, job_buffer[i]->priority);
+		printf("Error encountered when counting jobs in queue");
+		return -1;
 	}
+
+	/* Determine the policy */
+	switch (policy)
+	{
+		case (0):
+			strcpy(sch_policy, "FCFS");
+			break;
+		case (1):
+			strcpy(sch_policy, "SJF");
+			break;
+		case (2):
+			strcpy(sch_policy, "Priority");
+			break;
+		default:
+			strcpy(sch_policy, "Eror determining scheduling policy");
+			break;
+	}
+
+	/* Print the queue information */
+	printf("Total number of jobs in the queue: %d\n"
+		"Scheduling Policy: %s\n"
+		"Job Name\t CPU Time\t Priority\t Arrival Time\n", 
+		num_jobs_in_queue, 
+		sch_policy);
+
+	/* Lock the job queue while we read from it */
+	pthread_mutex_lock(&job_queue_mutex);
+	for(i=0; i < JOB_BUFFER_SIZE; i++)
+	{
+		j = (job_buffer_tail + i) % JOB_BUFFER_SIZE;
+		printf("%s\t \t%d\t \t%d \t%lld\n", 
+		job_buffer[j]->name, 
+		job_buffer[j]->cpu_time, 
+		job_buffer[j]->priority, 
+		(long long) job_buffer[j]->arrival_time);
+	}
+	/* Unlock when we are done */
+	pthread_mutex_unlock(&job_queue_mutex);
+	return 0; 
 }
 
-/* Quit command */
 /*
- *
+ * Calcualte the number of jobs in the job queue
+ */
+int get_num_jobs_in_queue()
+{
+	int num_jobs_in_queue = -1;
+
+	/* If the head is ahead of the tail */
+	if (job_buffer_head > job_buffer_tail)
+	{
+		/* Simply take the difference */
+		num_jobs_in_queue = job_buffer_head - job_buffer_tail - 1;
+	}
+	/* If the head is behind of the tail */
+	else if (job_buffer_head < job_buffer_tail)
+	{
+		/* Subtract the difference between the tail and the head from the buffer size */
+		num_jobs_in_queue = JOB_BUFFER_SIZE - (job_buffer_tail - job_buffer_head) - 1;
+	}
+	/* If the head is at the tail */
+	else
+	{
+		/* Queue is empty */
+		num_jobs_in_queue = 0;
+	}
+
+	return num_jobs_in_queue;
+}
+
+/*
+ * Quit command
  */
 int quit(int nargs, char **args) 
 {
+	print_stats();
 	printf("Thank you for using AUbatch!\n");
     exit(0);
 }
 
-/* First Come, First Served */
 /*
- *
+ * Print the statistics for the schedular
+ */
+int print_stats()
+{	
+	/* Lock the job queue while the stats are being calculated */
+	pthread_mutex_lock(&job_queue_mutex);
+	/* Iterate through the job buffer and calcualte the stats */
+	int i, j;
+	for(i=0; i < JOB_BUFFER_SIZE; i++)
+	{
+		j = (job_buffer_tail + i) % JOB_BUFFER_SIZE;
+		avg_turnaround_time = (job_buffer[j]->complete_time - job_buffer[j]->arrival_time) / num_jobs_submitted;
+		avg_cpu_time = (job_buffer[j]->complete_time - job_buffer[j]->run_time) / num_jobs_submitted;
+		avg_waiting_time = (job_buffer[j]->run_time - job_buffer[j]->arrival_time) / num_jobs_submitted;
+	}
+	/* Throughput is the inverse of average turnaround time */
+	throughput = 1.0/avg_turnaround_time;
+	/* Print the stats */
+	printf("Total number of jobs submitted: %d\n"
+		"Average turnaround time: %f seconds\n"
+		"Average CPU time: %f seconds\n"
+		"Average waiting time: %f seconds\n"
+		"Throughput: %f No./second\n", 
+		num_jobs_submitted,
+		avg_turnaround_time,
+		avg_cpu_time,
+		avg_turnaround_time,
+		throughput);
+
+	/* Unlock the job queue when done */
+	pthread_mutex_unlock(&job_queue_mutex);
+
+	return 0;
+}
+
+/*
+ * Sets the scheduling policy to First Come, First Served
  */
 int fcfs(int nargs, char **args)
 {
@@ -221,9 +342,8 @@ int fcfs(int nargs, char **args)
 	return 0;
 }
 
-/* Shortest Job Firsrt */
 /*
- *
+ * Sets the scheduling policy to Shortest Job Firsrt
  */
 int sjf(int nargs, char **args)
 {
@@ -237,9 +357,8 @@ int sjf(int nargs, char **args)
 	return 0;
 }
 
-/* Job priority */
 /*
- *
+ * Sets the scheduling policy to Job priority
  */
 int priority(int nargs, char **args)
 {
@@ -253,9 +372,8 @@ int priority(int nargs, char **args)
 	return 0;
 }
 
-/* User Commands */
 /*
- *
+ * Setup a user user commands dictionary 
  */
 static struct 
 {
@@ -276,9 +394,8 @@ commands_dict[] =
 	{ "q\n",	    quit },
 };
 
-/* Execute a command */
 /*
- *
+ * Execute a user command
  */
 int execute_command(char *job_arg)
 {
@@ -322,8 +439,8 @@ int execute_command(char *job_arg)
 }
 
  /*
- *
- */
+  * Display the main menu
+  */
 void *menu( void *ptr)
 {
 	char *buffer;
@@ -356,7 +473,9 @@ void *menu( void *ptr)
 	}
 }
 
-/* Help menu */
+/* 
+ * Display the help menu 
+ */
 int display_help_menu(int nargs, char **args)
 {
 	(void)nargs;
@@ -379,114 +498,111 @@ int display_help_menu(int nargs, char **args)
 }
 
 /*
- * Dispatcher
+ * Dispatcher function
  */
 void *dispatcher(void *ptr)
 {
-    char *message;
+    // char *message;
     unsigned int i;
- 	char *arg[5];
-	pid_t pid;
+
+	// message = (char *) ptr;
+    // printf("%s \n", message);
 
     for (i = 0; i < NUM_OF_JOBS; i++) 
     {
+		/* Lock the job queue */
         pthread_mutex_lock(&job_queue_mutex);
+		/* While the number of jobs is 0, wait */
         while (count == 0) 
         {
             pthread_cond_wait(&job_buffer_not_empty, &job_queue_mutex);
         }
-
-	    if(policy == 0)
-        {
-	        execv_call(job_buffer[job_buffer_tail]);
-            count--;
-	        job_buffer_tail++;
-	    }
-	
-	    if(policy == 1)
-        {
-		    enforce_policy();
-		    for(job_buffer_tail=0; count != 0; job_buffer_tail++)
-            {
-		        execv_call(job_buffer[job_buffer_tail]);
-		        count--;
-		    }
-	        pthread_mutex_unlock(&job_queue_mutex);
-	    }
-   	
-	    if(policy == 2)
-        {
-		    enforce_policy();
-		    for(job_buffer_tail=0; count != 0; job_buffer_tail++)
-            {
-		        execv_call(job_buffer[job_buffer_tail]);
-		        count--;
-		    }
-	        pthread_mutex_unlock(&job_queue_mutex);
-	    }
-
-        if (job_buffer_tail == JOB_BUFFER_SIZE)
-            job_buffer_tail = 0;
-
+		/* Decrement the waiting jobs count */
+		count--;
+		/* Call to execute the job */
+	    execv_call(job_buffer[job_buffer_tail]);
+		/* Free up the job buffer space */
+		// free(job_buffer[job_buffer_tail]);
+		/* Increment the job buffer tail, this is a circular buffer */
+		job_buffer_tail++;
+		job_buffer_tail = job_buffer_tail % JOB_BUFFER_SIZE;
+		/* Signal that the job buffer is not full */
         pthread_cond_signal(&job_buffer_not_full);
-        /* Unlock the shared job queue */
-        pthread_mutex_unlock(&job_queue_mutex);
-
-    }/* end for */
-}
-
-/*
- * Scheduler
- */
-void *scheduler(void *ptr){
-    char *message;
-    struct queue *temp_job;
-    unsigned int i;
-    char num_str[8];
-    size_t command_size;
-
-    for (i = 0; i < NUM_OF_JOBS; i++) 
-    {    
-        pthread_mutex_lock(&job_queue_mutex);
-        while (count == JOB_BUFFER_SIZE) 
-        {
-            pthread_cond_wait(&job_buffer_not_full, &job_queue_mutex);
-        }
-
-        pthread_mutex_unlock(&job_queue_mutex);
-        temp_job = malloc(MAX_JOB_LEN*sizeof(struct queue));
-
-        while(lock == 0)
-        {
-		    pthread_cond_wait(&job_submit, &job_queue_run_mutex);	
-	    }
-	    lock--;
-
-        pthread_mutex_lock(&job_queue_mutex); 
-	    strcpy(temp_job->name, param_list[0]);
-
-	    temp_job->burst_time = atoi(param_list[1]);
-	    temp_job->priority = atoi(param_list[2]);   
-        job_buffer[job_buffer_head] = temp_job;
-        count++;
-        /* Move buf_head_s forward, this is a circular queue */ 
-        job_buffer_head = job_buffer_head++ % JOB_BUFFER_SIZE;
-        // if (job_buffer_head == JOB_BUFFER_SIZE)
-        //     job_buffer_head = 0;
-	
-        pthread_cond_signal(&job_buffer_not_empty);  
-        /* Unlock the shared command queue */
+        /* Unlock the job queue */
         pthread_mutex_unlock(&job_queue_mutex);
     }
 }
 
 /*
- *
+ * Scheduler function
+ */
+void *scheduler(void *ptr){
+    // char *message;
+    struct queue *temp_job;
+    unsigned int i;
+
+	// message = (char *) ptr;
+    // printf("%s \n", message);
+
+    for (i = 0; i < NUM_OF_JOBS; i++) 
+    {   
+		/* Lock the job queue */
+        pthread_mutex_lock(&job_queue_mutex);
+		/* While the job count is equal to the job buffer size, wait */
+        while (count == JOB_BUFFER_SIZE) 
+        {
+            pthread_cond_wait(&job_buffer_not_full, &job_queue_mutex);
+        }
+		/* Unlock the job queue */
+		pthread_mutex_unlock(&job_queue_mutex);
+		/* Allocate a temp job */
+        temp_job = malloc(MAX_JOB_LEN*sizeof(struct queue));
+		/* Lock the job run queue*/
+		pthread_mutex_lock(&job_queue_mutex);
+		/* While the number of number of locks, aka submitted jobs, is zero, wait */
+        while(lock == 0)
+        {
+		    pthread_cond_wait(&job_submit, &job_queue_mutex);	
+	    }
+	    lock--;
+		/* Unlock the job run queue */
+		pthread_mutex_unlock(&job_queue_mutex);
+		/* Lock the job queue */
+		pthread_mutex_lock(&job_queue_mutex);
+		/* Copy the job name from the params */
+	    strcpy(temp_job->name, param_list[0]);
+		/* Populate the temp job info */
+	    temp_job->cpu_time = atoi(param_list[1]);
+	    temp_job->priority = atoi(param_list[2]);
+		/* Set the arrival time in; Seconds since Epoch */
+		time(&temp_job->arrival_time);
+		/* Add the job to the job buffer */
+        job_buffer[job_buffer_head] = temp_job;
+		/* Increment the job count*/
+        count++;
+        /* Move buf_head_s forward, this is a circular queue */
+		job_buffer_head++;
+        job_buffer_head = job_buffer_head % JOB_BUFFER_SIZE;	
+		/* Signal that the job buffer is not empty */
+        pthread_cond_signal(&job_buffer_not_empty);
+        /* Unlock the job queue */
+        pthread_mutex_unlock(&job_queue_mutex);
+    }
+}
+
+/*
+ * Main funciton.
  */
 int main()
 {
 	/* Initialize the threads */
-    pthread_t menu_thread, dispatcher_thread, scheduler_thread; 
+    pthread_t menu_thread, dispatcher_thread, scheduler_thread;
+
+	/* Initialize the  the two condition variables */
+    pthread_mutex_init(&job_queue_mutex, NULL);
+    pthread_cond_init(&job_buffer_not_full, NULL);
+    pthread_cond_init(&job_buffer_not_empty, NULL);
+    pthread_cond_init(&job_submit, NULL);
 
 	/* Initialize the thread messages */
     char *menu_message = "Menu Thread";
@@ -500,17 +616,14 @@ int main()
     menu_return = pthread_create(&menu_thread, NULL, menu, (void*) menu_message);
 	scheduler_return = pthread_create(&scheduler_thread, NULL, scheduler, (void*) scheduler_message);
     dispatcher_return = pthread_create(&dispatcher_thread, NULL, dispatcher, (void*) dispatcher_message);
-
-    /* Initialize the  the two condition variables */
-    pthread_mutex_init(&job_queue_mutex, NULL);
-    pthread_mutex_init(&job_queue_run_mutex, NULL);
-    pthread_cond_init(&job_buffer_not_full, NULL);
-    pthread_cond_init(&job_buffer_not_empty, NULL);
-    pthread_cond_init(&job_submit, NULL);
      
+	/* Join the threads so that the program only exits when all are complete */
     pthread_join(dispatcher_thread, NULL);
     pthread_join(scheduler_thread, NULL);
     pthread_join(menu_thread, NULL); 
+
+	/* Print a message indicating that execution is complete*/
+	printf("AU Batch threads have completed, goodbye and thank you for using AUBatch.");
 
     return 0;
  }
