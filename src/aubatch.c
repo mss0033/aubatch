@@ -1,5 +1,9 @@
 /*
- * 
+ * @author Mattew Shiplett
+ * @date March 18th, 2023
+ * AUBatch is a program that makes use of multiple threads
+ * to provide a CLI that allows a user to submit a job
+ * with a given estimated execution time and a priority.
  */
 
 #include "aubatch.h"
@@ -36,15 +40,40 @@ float throughput = 0.0;
 char job[30];
 char *param_list[3];
 
-struct queue *job_buffer[JOB_BUFFER_SIZE];
+struct job job_buffer[JOB_BUFFER_SIZE];
 
 /*
- *
+ * Setup a user user commands dictionary 
+ */
+static struct 
+{
+	const char *command_name;
+	int (*func)(int nargs, char **args);
+} 
+commands_dict[] = 
+{
+	{ "?\n",        display_help_menu },
+	{ "h\n",        display_help_menu },
+	{ "help\n",     display_help_menu },
+	{ "run",        run },
+	{ "list\n",     list },
+    { "fcfs\n",     fcfs },
+	{ "sjf\n",      sjf },
+	{ "priority\n", priority },
+	{ "quit\n",	    quit },
+	{ "q\n",	    quit },
+	{ "test\n",     test },
+	{ "t\n",        test },
+};
+
+/*
+ * Enforces the selected scheduling policy by reordering
+ * the job queue when called
  */
 void enforce_policy(void)
 {
 	/* Function to apply proper sorting in job queue */
-	struct queue *key;
+	struct job key;
 	int i = 0,j;
 	
 	/* Check the scheduling  */
@@ -52,16 +81,18 @@ void enforce_policy(void)
 	switch(policy)
 	{
 		/* FCFS */
-		case 0:
-			if (job_buffer_head == 0)
+		case FCFS:
+			/* If the head is equal to the tail, nothing is in the queue, or something is wrong */
+			if (job_buffer_head == job_buffer_tail)
 			{
 				break;
 			}
+			/* Iterate through the queue and reorder based on the policy */
 			for(i = job_buffer_tail; i < job_buffer_head - 1; ++i)
 			{
 				for(j = job_buffer_tail; j < job_buffer_head - i - 1; ++j)
 				{
-					if(job_buffer[j]->arrival_time > job_buffer[j+1]->arrival_time)
+					if(job_buffer[j].arrival_time > job_buffer[j+1].arrival_time)
 					{
 						key = job_buffer[j];
 						job_buffer[j] = job_buffer[j+1];
@@ -71,16 +102,18 @@ void enforce_policy(void)
 			}
 			break;
 		/* Sorting by CPU Time */
-		case 1:
-			if (job_buffer_head == 0)
+		case SJF:
+			/* If the head is equal to the tail, nothing is in the queue, or something is wrong */
+			if (job_buffer_head == job_buffer_tail)
 			{
 				break;
 			}
+			/* Iterate through the queue and reorder based on the policy */
 			for(i = job_buffer_tail; i < job_buffer_head - 1 ; ++i)
 			{
 				for(j = job_buffer_tail; j < job_buffer_head - i - 1; ++j)
 				{
-					if(job_buffer[j]->cpu_time > job_buffer[j+1]->cpu_time)
+					if(job_buffer[j].cpu_time > job_buffer[j+1].cpu_time)
 					{
 						key = job_buffer[j];
 						job_buffer[j] = job_buffer[j+1];
@@ -90,16 +123,18 @@ void enforce_policy(void)
 			}
 			break;
 		/* Sorting by Priority */
-		case 2:
-			if (job_buffer_head == 0)
+		case PRIORITY:
+			/* If the head is equal to the tail, nothing is in the queue, or something is wrong */
+			if (job_buffer_head == job_buffer_tail)
 			{
 				break;
 			}
+			/* Iterate through the queue and reorder based on the policy */
 			for(i = job_buffer_tail; i < job_buffer_head - 1; ++i)
 			{
 				for(j = job_buffer_tail; j < job_buffer_head - i - 1; ++j)
 				{
-					if(job_buffer[j]->priority > job_buffer[j+1]->priority)
+					if(job_buffer[j].priority > job_buffer[j+1].priority)
 					{
 						key = job_buffer[j];
 						job_buffer[j] = job_buffer[j+1];
@@ -110,6 +145,7 @@ void enforce_policy(void)
 			break;
 		/* Unknown */
 		default:
+			printf("Unrecongnized scheduling policy requested, nothing has been rescheduled.\n");
 			break;	
 	}
 	pthread_mutex_unlock(&job_queue_mutex);
@@ -118,41 +154,45 @@ void enforce_policy(void)
 /*
  *
  */
-void *execv_call(struct queue *param)
+void *execv_call(struct job *new_job)
 {
+	/* Initialize the execv args */
 	char *args[3];
-	pid_t pid;
-
-	args[0] = param->name;
-	sprintf(args[1], "%d", param->cpu_time);
+	/* Initialize a PID and status */
+	pid_t wpid;
+	int status = 0;
+	/* Populate the execv args */
+	args[0] = malloc(strlen(new_job->name) * sizeof(char));
+	args[0] = new_job->name;
+	args[1] = malloc(sizeof(int) * sizeof(char));
+	sprintf(args[1], "%d", new_job->cpu_time);
 	args[2] = NULL;
-	//args[1] = NULL;
+
+	// args[1] = NULL;
+
+	/* Set the job status to running */
+	new_job->status = RUNNING; // status of 1 indicates running
+	/* Set the job start time */
+	time(&job_buffer[job_buffer_tail].start_time);
 
 	/* fork() an execv() process */
-	 switch ((pid = fork()))
+	 switch ((wpid = fork()))
   	 {
 		/* If fork() fails */
    	 	case -1:
 			/* Throw an error */
    	   		perror("fork failed");
-        		break;
+        	break;
      	case 0:
-	 		/* Set the run time */
-			time(&param->run_time);
 			/* Execution of execv() */
 			if(execv(args[0], args)==-1)
 			{ 
 	 			perror("Fail\n");
 	 			exit(0);
 			}
-			/* Sleep this thread until the exe is complete */
-			sleep(param->cpu_time);
-			/* Set the complete time */
-			time(&param->complete_time);
+			break;
       	default:
-	 		//  pthread_mutex_lock(&job_queue_run_mutex);
-	 		//  sleep(param->burst_time);
-	 		//  pthread_mutex_unlock(&job_queue_run_mutex);
+			// while((wpid = wait(&status)) > 0);
        		break;
   	}
 
@@ -160,20 +200,20 @@ void *execv_call(struct queue *param)
 }
 
 /*
- *
+ * Runs a user input job
  */
 int run(int nargs, char **args) 
 {
 	int i=1;
 	int counter = nargs;
 
-	pthread_mutex_lock(&job_queue_mutex);
-
 	if (nargs != 4) 
 	{
 		printf("Usage: run <job> <time> <priority>\n");
 		return INVALID;
 	}
+
+	pthread_mutex_lock(&job_queue_mutex);
 
 	counter--;
 	strcpy(job, args[0]);
@@ -202,7 +242,8 @@ int list(int nargs, char **args)
 	(void)args;
 
 	int i, j, num_jobs_in_queue;
-	char* sch_policy;
+	char sch_policy[50];
+	char job_status[15];
 
 	/* Determine the number of jobs in the queue */
 	num_jobs_in_queue = get_num_jobs_in_queue();
@@ -212,27 +253,14 @@ int list(int nargs, char **args)
 		return -1;
 	}
 
-	/* Determine the policy */
-	switch (policy)
-	{
-		case (0):
-			strcpy(sch_policy, "FCFS");
-			break;
-		case (1):
-			strcpy(sch_policy, "SJF");
-			break;
-		case (2):
-			strcpy(sch_policy, "Priority");
-			break;
-		default:
-			strcpy(sch_policy, "Eror determining scheduling policy");
-			break;
-	}
+	/* Get the scheduling policy */
+	get_scheduling_policy_as_string(sch_policy);
+	/* Get the job status */
 
 	/* Print the queue information */
 	printf("Total number of jobs in the queue: %d\n"
 		"Scheduling Policy: %s\n"
-		"Job Name\t CPU Time\t Priority\t Arrival Time\n", 
+		"Job Name\t CPU Time\t Priority\t Arrival Time\t Status\n", 
 		num_jobs_in_queue, 
 		sch_policy);
 
@@ -240,15 +268,21 @@ int list(int nargs, char **args)
 	pthread_mutex_lock(&job_queue_mutex);
 	for(i=0; i < JOB_BUFFER_SIZE; i++)
 	{
-		j = (job_buffer_tail + i) % JOB_BUFFER_SIZE;
-		printf("%s\t \t%d\t \t%d \t%lld\n", 
-		job_buffer[j]->name, 
-		job_buffer[j]->cpu_time, 
-		job_buffer[j]->priority, 
-		(long long) job_buffer[j]->arrival_time);
+		j = ((job_buffer_tail - 1) + i) % JOB_BUFFER_SIZE;
+		if (job_buffer[j].name != NULL && strlen(job_buffer[j].name) > 0)
+		{
+			get_job_status_as_string(&job_buffer[j], job_status);
+			printf("%s\t \t%d\t \t%d\t %lld\t %s\n", 
+			job_buffer[j].name, 
+			job_buffer[j].cpu_time, 
+			job_buffer[j].priority, 
+			(long long) job_buffer[j].arrival_time,
+			job_status);
+		}
 	}
 	/* Unlock when we are done */
 	pthread_mutex_unlock(&job_queue_mutex);
+
 	return 0; 
 }
 
@@ -257,19 +291,19 @@ int list(int nargs, char **args)
  */
 int get_num_jobs_in_queue()
 {
+	/* Initialize the number of jobs in the queue */
 	int num_jobs_in_queue = -1;
-
 	/* If the head is ahead of the tail */
 	if (job_buffer_head > job_buffer_tail)
 	{
 		/* Simply take the difference */
-		num_jobs_in_queue = job_buffer_head - job_buffer_tail - 1;
+		num_jobs_in_queue = job_buffer_head - job_buffer_tail;
 	}
 	/* If the head is behind of the tail */
 	else if (job_buffer_head < job_buffer_tail)
 	{
 		/* Subtract the difference between the tail and the head from the buffer size */
-		num_jobs_in_queue = JOB_BUFFER_SIZE - (job_buffer_tail - job_buffer_head) - 1;
+		num_jobs_in_queue = JOB_BUFFER_SIZE - (job_buffer_tail - job_buffer_head);
 	}
 	/* If the head is at the tail */
 	else
@@ -279,6 +313,53 @@ int get_num_jobs_in_queue()
 	}
 
 	return num_jobs_in_queue;
+}
+
+/*
+ * Copies a string form of the scheduling policy
+ * into the input string
+ */
+int get_scheduling_policy_as_string(char* policy_string)
+{
+	/* Determine the policy */
+	switch (policy)
+	{
+		case (0):
+			strcpy(policy_string, "FCFS");
+			break;
+		case (1):
+			strcpy(policy_string, "SJF");
+			break;
+		case (2):
+			strcpy(policy_string, "Priority");
+			break;
+		default:
+			strcpy(policy_string, "Error determining scheduling policy");
+			break;
+	}
+
+	return 0;
+}
+
+/*
+ * Copies a string form of the job status into
+ * the input string
+ */
+int get_job_status_as_string(struct job *job, char *status_string)
+{
+	switch (job->status)
+	{
+		case (WAITING):
+			strcpy(status_string, "Waiting");
+			break;
+		case (RUNNING):
+			strcpy(status_string, "Running");
+			break;
+		case (COMPLETE):
+			strcpy(status_string, "Complete");
+			break;
+	}
+	return 0;
 }
 
 /*
@@ -298,23 +379,33 @@ int print_stats()
 {	
 	/* Lock the job queue while the stats are being calculated */
 	pthread_mutex_lock(&job_queue_mutex);
-	/* Iterate through the job buffer and calcualte the stats */
-	int i, j;
-	for(i=0; i < JOB_BUFFER_SIZE; i++)
+	/* 
+	 * If the number of jobs is not equal to 0 
+	 * Iterate through the job buffer and calcualte the stats 
+	 */
+	if (num_jobs_submitted != 0)
 	{
-		j = (job_buffer_tail + i) % JOB_BUFFER_SIZE;
-		avg_turnaround_time = (job_buffer[j]->complete_time - job_buffer[j]->arrival_time) / num_jobs_submitted;
-		avg_cpu_time = (job_buffer[j]->complete_time - job_buffer[j]->run_time) / num_jobs_submitted;
-		avg_waiting_time = (job_buffer[j]->run_time - job_buffer[j]->arrival_time) / num_jobs_submitted;
+		int i, j;
+		for(i=0; i < JOB_BUFFER_SIZE; i++)
+		{
+			j = (job_buffer_tail + i) % JOB_BUFFER_SIZE;
+			if (job_buffer[j].name != NULL && strlen(job_buffer[j].name) > 0)
+			{
+				avg_turnaround_time += (job_buffer[j].complete_time - job_buffer[j].arrival_time) / num_jobs_submitted;
+				avg_cpu_time += (job_buffer[j].complete_time - job_buffer[j].start_time) / num_jobs_submitted;
+				avg_waiting_time += (job_buffer[j].start_time - job_buffer[j].arrival_time) / num_jobs_submitted;
+			}
+		}
+		/* Throughput is the inverse of average turnaround time */
+		throughput = 1.0/avg_turnaround_time;
 	}
-	/* Throughput is the inverse of average turnaround time */
-	throughput = 1.0/avg_turnaround_time;
+
 	/* Print the stats */
 	printf("Total number of jobs submitted: %d\n"
-		"Average turnaround time: %f seconds\n"
-		"Average CPU time: %f seconds\n"
-		"Average waiting time: %f seconds\n"
-		"Throughput: %f No./second\n", 
+		"Average turnaround time: %.3f seconds\n"
+		"Average CPU time: %.3f seconds\n"
+		"Average waiting time: %.3f seconds\n"
+		"Throughput: %.3f No./second\n", 
 		num_jobs_submitted,
 		avg_turnaround_time,
 		avg_cpu_time,
@@ -327,6 +418,36 @@ int print_stats()
 	return 0;
 }
 
+/* 
+ * Iterates over the waiting tasks and calculates the remaining wait time
+ */
+int get_total_wait_time()
+{
+	int total_wait_time = 0;
+	/* 
+	 * If the number of jobs is not equal to 0 
+	 * Iterate through the job buffer and calcualte the stats 
+	 */
+	if (num_jobs_submitted != 0)
+	{
+		int i, j;
+		for(i=0; i < JOB_BUFFER_SIZE; i++)
+		{
+			j = (job_buffer_tail + i) % JOB_BUFFER_SIZE;
+			if (job_buffer[j].name != NULL 
+				&& strlen(job_buffer[j].name) > 0
+				&& job_buffer[j].status == WAITING)
+			{
+				total_wait_time += job_buffer[j].cpu_time;
+			}
+		}
+		/* Throughput is the inverse of average turnaround time */
+		throughput = 1.0/avg_turnaround_time;
+	}
+	
+	return total_wait_time;
+}
+
 /*
  * Sets the scheduling policy to First Come, First Served
  */
@@ -335,9 +456,10 @@ int fcfs(int nargs, char **args)
 	(void)nargs;
 	(void)args;
 
-	policy = 0;
-	printf("Policy is changed to FCFS\n");
+	policy = 0; // Policy of 0 is FCFS
 	enforce_policy();
+	printf("Policy is changed to FCFS"
+		"All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
 
 	return 0;
 }
@@ -351,8 +473,9 @@ int sjf(int nargs, char **args)
 	(void)args;
 
 	policy = 1;
-	printf("Policy is changed to SJF\n");
 	enforce_policy();
+	printf("Policy is changed to SJF"
+		"All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
 
 	return 0;
 }
@@ -366,33 +489,25 @@ int priority(int nargs, char **args)
 	(void)args;
 
 	policy = 2;
-	printf("Policy is changed to Priority scheduling\n");
 	enforce_policy();
+	printf("Policy is changed to Priority scheduling"
+		"All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
 
 	return 0;
 }
 
 /*
- * Setup a user user commands dictionary 
+ * Allows users to test AUBatch using a provided benchmark and parameters
  */
-static struct 
+int test(int nargs, char **args)
 {
-	const char *command_name;
-	int (*func)(int nargs, char **args);
-} 
-commands_dict[] = 
-{
-	{ "?\n",        display_help_menu },
-	{ "h\n",        display_help_menu },
-	{ "help\n",     display_help_menu },
-	{ "run",        run },
-	{ "list\n",     list },
-    { "fcfs\n",     fcfs },
-	{ "sjf\n",      sjf },
-	{ "priority\n", priority },
-	{ "quit\n",	    quit },
-	{ "q\n",	    quit },
-};
+	(void)nargs;
+	(void)args;
+
+	printf("Apologies, this function is not supported as of Version 1");
+
+	return 0;
+}
 
 /*
  * Execute a user command
@@ -453,7 +568,7 @@ void *menu( void *ptr)
  	    exit(1);
 	}
 
-    char *menu_body = "Welcome Matthew's AUBatch job scheduler\n" 
+    char *menu_body = "Welcome Matthew's AUBatch job scheduler Version 1.0\n" 
          "Please type 'help' or 'h' to find out more about the AUBatch commands\n"
          "*******************************************************************\n"
          "Submit jobs with \"run <job> <time> <priority>\"\n"
@@ -482,17 +597,40 @@ int display_help_menu(int nargs, char **args)
 	(void)args;
 
     char *help_menu_body = 
-		"\trun <job> <time> <priority>\"\n"
-		"			submit a job named: <job>\n"
-		"			estimated execution time is <time>\n"
-		"			job priority is <priority>\n"
-        "\thelp - Display help menu\n"
-        "\tfcfs - Set scheduler to FCFS policy\n"
-        "\tsjf - Set scheduler SJF policy\n"
-        "\tpriority - Set scheduler Priority policy\n"
-        "\tquit - Quit AUbatch\n";
+		"run <job> <time> <priority>:\n"
+		"			submit a job named <job>\n"
+		"			execution time is <time>\n"
+		"			priority is <priority>\n"
+		"list: Display the job statuses\n"
+        "help: Display help menu\n"
+        "fcfs: Set scheduler to FCFS policy\n"
+        "sjf: Set scheduler SJF policy\n"
+        "priority: Set scheduler Priority policy\n"
+		"test <benchmark> <policy> <num_of_jobs> <priority_levels>"
+		"<min_CPU_time> <max_CPU_time>\n"
+        "quit: Exit AUbatch\n";
 
 	printf("%s", help_menu_body);
+
+	return 0;
+}
+
+/*
+ * Displays the current job queue information
+ */
+int display_job_queue_info(struct job *job_to_display)
+{
+	char sch_policy[100];
+	get_scheduling_policy_as_string(sch_policy);
+	printf("Job %s was submitted.\n"
+		"> Total number of jobs in queue: %d\n"
+		"> Expected waiting time: %d\n"
+		"> Scheduling Policy: %s\n"
+		"> ",
+		job_to_display->name,
+		get_num_jobs_in_queue(),
+		get_total_wait_time(),
+		sch_policy);
 
 	return 0;
 }
@@ -519,8 +657,19 @@ void *dispatcher(void *ptr)
         }
 		/* Decrement the waiting jobs count */
 		count--;
+		/* Before we go run a job, unlock the queue mutex*/
+		pthread_mutex_unlock(&job_queue_mutex);
 		/* Call to execute the job */
-	    execv_call(job_buffer[job_buffer_tail]);
+	    execv_call(&job_buffer[job_buffer_tail]);
+		/* Once we come back from running a job, lock the mutext again*/
+		pthread_mutex_lock(&job_queue_mutex);
+		/* Set the job status to complete*/
+		job_buffer[job_buffer_tail].status = COMPLETE;
+		/* Due to how execv works, the best I can figure to do is
+		 * set the complete time to the CPU time.
+		 */
+		job_buffer[job_buffer_tail].complete_time = 
+			job_buffer[job_buffer_tail].start_time + job_buffer[job_buffer_tail].cpu_time;
 		/* Free up the job buffer space */
 		// free(job_buffer[job_buffer_tail]);
 		/* Increment the job buffer tail, this is a circular buffer */
@@ -538,7 +687,7 @@ void *dispatcher(void *ptr)
  */
 void *scheduler(void *ptr){
     // char *message;
-    struct queue *temp_job;
+    struct job temp_job;
     unsigned int i;
 
 	// message = (char *) ptr;
@@ -555,8 +704,6 @@ void *scheduler(void *ptr){
         }
 		/* Unlock the job queue */
 		pthread_mutex_unlock(&job_queue_mutex);
-		/* Allocate a temp job */
-        temp_job = malloc(MAX_JOB_LEN*sizeof(struct queue));
 		/* Lock the job run queue*/
 		pthread_mutex_lock(&job_queue_mutex);
 		/* While the number of number of locks, aka submitted jobs, is zero, wait */
@@ -570,19 +717,22 @@ void *scheduler(void *ptr){
 		/* Lock the job queue */
 		pthread_mutex_lock(&job_queue_mutex);
 		/* Copy the job name from the params */
-	    strcpy(temp_job->name, param_list[0]);
+	    strcpy(temp_job.name, param_list[0]);
 		/* Populate the temp job info */
-	    temp_job->cpu_time = atoi(param_list[1]);
-	    temp_job->priority = atoi(param_list[2]);
+	    temp_job.cpu_time = atoi(param_list[1]);
+	    temp_job.priority = atoi(param_list[2]);
+		temp_job.status = WAITING; // status of 0 indicates waiting
 		/* Set the arrival time in; Seconds since Epoch */
-		time(&temp_job->arrival_time);
+		time(&temp_job.arrival_time);
 		/* Add the job to the job buffer */
         job_buffer[job_buffer_head] = temp_job;
 		/* Increment the job count*/
         count++;
         /* Move buf_head_s forward, this is a circular queue */
 		job_buffer_head++;
-        job_buffer_head = job_buffer_head % JOB_BUFFER_SIZE;	
+        job_buffer_head = job_buffer_head % JOB_BUFFER_SIZE;
+		/* Display the current job queue info */
+		display_job_queue_info(&job_buffer[job_buffer_tail]);
 		/* Signal that the job buffer is not empty */
         pthread_cond_signal(&job_buffer_not_empty);
         /* Unlock the job queue */
