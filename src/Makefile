@@ -10,14 +10,8 @@ batch_job: batch_job.o
 batch_job.o: batch_job.c
 	gcc -c batch_job.c
 
-process: process.o
-	gcc process.c -o process
-
-process.o: process.c
-	gcc -c process.c
-
 clean:
 	rm *.o
 
 cleanAll:
-	rm *.o aubatch process batch_job
+	rm *.o aubatch batch_job
