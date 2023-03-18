@@ -504,7 +504,7 @@ int test(int nargs, char **args)
 	(void)nargs;
 	(void)args;
 
-	printf("Apologies, this function is not supported as of Version 1");
+	printf("Apologies, this function is not supported as of Version 1\n");
 
 	return 0;
 }
