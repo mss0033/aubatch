@@ -458,8 +458,8 @@ int fcfs(int nargs, char **args)
 
 	policy = 0; // Policy of 0 is FCFS
 	enforce_policy();
-	printf("Policy is changed to FCFS"
-		"All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
+	printf("Policy is changed to FCFS."
+		" All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
 
 	return 0;
 }
@@ -474,8 +474,8 @@ int sjf(int nargs, char **args)
 
 	policy = 1;
 	enforce_policy();
-	printf("Policy is changed to SJF"
-		"All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
+	printf("Policy is changed to SJF."
+		" All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
 
 	return 0;
 }
@@ -490,8 +490,8 @@ int priority(int nargs, char **args)
 
 	policy = 2;
 	enforce_policy();
-	printf("Policy is changed to Priority scheduling"
-		"All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
+	printf("Policy is changed to Priority scheduling."
+		" All %d waiting jobs have been rescheduled.\n", get_num_jobs_in_queue());
 
 	return 0;
 }
