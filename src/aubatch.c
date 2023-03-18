@@ -368,7 +368,7 @@ int get_job_status_as_string(struct job *job, char *status_string)
 int quit(int nargs, char **args) 
 {
 	print_stats();
-	printf("Thank you for using AUbatch!\n");
+	printf("Thank you for using Matthew's AUbatch!\n");
     exit(0);
 }
 
@@ -568,7 +568,7 @@ void *menu( void *ptr)
  	    exit(1);
 	}
 
-    char *menu_body = "Welcome Matthew's AUBatch job scheduler Version 1.0\n" 
+    char *menu_body = "Welcome to Matthew's AUBatch job scheduler Version 1.0\n" 
          "Please type 'help' or 'h' to find out more about the AUBatch commands\n"
          "*******************************************************************\n"
          "Submit jobs with \"run <job> <time> <priority>\"\n"
