@@ -33,10 +33,10 @@ To run a test, user would enter:
 > test batch_job sjf 5 5 5 15
 ```
 
-# clean-up 
+# Clean-up 
 ```
 make cleanAll
 ```
 
 # Notes
-* When a job is submitted, a '> ' fails to be appended to the console, however users can still enter input
+* When a job is submitted via the 'run' command, a '> ' fails to be appended to the console, however users can still enter input
