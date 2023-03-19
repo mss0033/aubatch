@@ -14,12 +14,12 @@ to clean up
 make clean
 ```
 
-### Usage
+# Usage
 ```
 ./aubatch
 ```
 
-### Example usage
+## Example usage
 To run the provided batch_job executable, a user would enter:
 ```
 > run batch_job 10 1
@@ -33,10 +33,10 @@ To run a test, user would enter:
 > test batch_job sjf 5 5 5 15
 ```
 
-### clean-up 
+# clean-up 
 ```
 make cleanAll
 ```
 
-#### Notes
+# Notes
 * When a job is submitted, a '> ' fails to be appended to the console, however users can still enter input
