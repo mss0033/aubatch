@@ -7,8 +7,10 @@ and run using a selected scheduling algorith.
 ```
 cd aubatch
 cd src
-make aubatch
-make batch_job
+make
+```
+to clean up
+```
 make clean
 ```
 
