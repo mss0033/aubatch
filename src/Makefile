@@ -1,4 +1,4 @@
-aubatch: aubatch.o
+aubatch: aubatch.o batch_job
 	gcc aubatch.o -o aubatch -lpthread
 
 aubatch.o: aubatch.c

@@ -1,0 +1,283 @@
+Script started on 2023-03-18 19:02:49-05:00 [TERM="xterm-256color" TTY="/dev/pts/23" COLUMNS="246" LINES="16"]
+[?2004h]0;elizabeth@W: ~/dev/aubatch[01;32melizabeth@W[00m:[01;34m~/dev/aubatch[00m$ cd src
+[?2004l[?2004h]0;elizabeth@W: ~/dev/aubatch/src[01;32melizabeth@W[00m:[01;34m~/dev/aubatch/src[00m$ make
+[?2004lgcc -c aubatch.c
+gcc -c batch_job.c
+gcc batch_job.o -o batch_job
+gcc aubatch.o -o aubatch -lpthread
+[?2004h]0;elizabeth@W: ~/dev/aubatch/src[01;32melizabeth@W[00m:[01;34m~/dev/aubatch/src[00m$ make clean
+[?2004lrm *.o
+[?2004h]0;elizabeth@W: ~/dev/aubatch/src[01;32melizabeth@W[00m:[01;34m~/dev/aubatch/src[00m$ /[K./aubatch 
+[?2004lWelcome to Matthew's AUBatch job scheduler Version 1.0
+Please type 'help' or 'h' to find out more about the AUBatch commands
+*******************************************************************
+Submit jobs with "run <job> <time> <priority>"
+			submit a job named: <job>
+			estimated execution time is <time>
+			job priority is <priority>
+Then please wait while the job(s) finish
+*******************************************************************
+> help
+run <job> <time> <priority>:
+			submit a job named <job>
+			execution time is <time>
+			priority is <priority>
+list: Display the job statuses
+help: Display help menu
+fcfs: Set scheduler to FCFS policy
+sjf: Set scheduler SJF policy
+priority: Set scheduler Priority policy
+test <benchmark> <policy> <num_of_jobs> <priority_levels> <min_CPU_time> <max_CPU_time>
+quit: Exit AUbatch
+> run batch_job 10 1
+> Job batch_job was submitted.
+> Total number of jobs in queue: 0
+> Expected waiting time: 10
+> Scheduling Policy: FCFS
+list
+> Total number of jobs in the queue: 0
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	1	 1679184190	 Running
+> list
+Total number of jobs in the queue: 0
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	1	 1679184190	 Running
+> list
+Total number of jobs in the queue: 0
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	1	 1679184190	 Running
+> list
+Total number of jobs in the queue: 0
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	1	 1679184190	 Complete
+> quit
+Total number of jobs submitted: 1
+Average turnaround time: 10.000 seconds
+Average CPU time: 10.000 seconds
+Average waiting time: 10.000 seconds
+Throughput: 0.100 No./second
+Thank you for using Matthew's AUbatch!
+[?2004h]0;elizabeth@W: ~/dev/aubatch/src[01;32melizabeth@W[00m:[01;34m~/dev/aubatch/src[00m$ ./aubatch 
+[?2004lWelcome to Matthew's AUBatch job scheduler Version 1.0
+Please type 'help' or 'h' to find out more about the AUBatch commands
+*******************************************************************
+Submit jobs with "run <job> <time> <priority>"
+			submit a job named: <job>
+			estimated execution time is <time>
+			job priority is <priority>
+Then please wait while the job(s) finish
+*******************************************************************
+> test batch_job 5 5     sjf 5 5 5 15
+> list
+Total number of jobs in the queue: 5
+Scheduling Policy: SJF
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	5	 	3	 1679184221	 Running
+batch_job	 	7	 	0	 1679184221	 Waiting
+batch_job	 	7	 	0	 1679184221	 Waiting
+batch_job	 	10	 	0	 1679184221	 Waiting
+batch_job	 	13	 	2	 1679184221	 Waiting
+> list
+Total number of jobs in the queue: 2
+Scheduling Policy: SJF
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	7	 	0	 1679184221	 Complete
+batch_job	 	10	 	0	 1679184221	 Running
+batch_job	 	13	 	2	 1679184221	 Waiting
+batch_job	 	5	 	3	 1679184221	 Complete
+batch_job	 	7	 	0	 1679184221	 Complete
+> list
+Total number of jobs in the queue: 2
+Scheduling Policy: SJF
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	7	 	0	 1679184221	 Complete
+batch_job	 	10	 	0	 1679184221	 Running
+batch_job	 	13	 	2	 1679184221	 Waiting
+batch_job	 	5	 	3	 1679184221	 Complete
+batch_job	 	7	 	0	 1679184221	 Complete
+> list
+Total number of jobs in the queue: 1
+Scheduling Policy: SJF
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	0	 1679184221	 Complete
+batch_job	 	13	 	2	 1679184221	 Running
+batch_job	 	5	 	3	 1679184221	 Complete
+batch_job	 	7	 	0	 1679184221	 Complete
+batch_job	 	7	 	0	 1679184221	 Complete
+> list
+Total number of jobs in the queue: 0
+Scheduling Policy: SJF
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	13	 	2	 1679184221	 Complete
+batch_job	 	5	 	3	 1679184221	 Complete
+batch_job	 	7	 	0	 1679184221	 Complete
+batch_job	 	7	 	0	 1679184221	 Complete
+batch_job	 	10	 	0	 1679184221	 Complete
+> quit
+Total number of jobs submitted: 5
+Average turnaround time: 19.000 seconds
+Average CPU time: 7.000 seconds
+Average waiting time: 19.000 seconds
+Throughput: 0.053 No./second
+Thank you for using Matthew's AUbatch!
+[?2004h]0;elizabeth@W: ~/dev/aubatch/src[01;32melizabeth@W[00m:[01;34m~/dev/aubatch/src[00m$ ./aubatch 
+[?2004lWelcome to Matthew's AUBatch job scheduler Version 1.0
+Please type 'help' or 'h' to find out more about the AUBatch commands
+*******************************************************************
+Submit jobs with "run <job> <time> <priority>"
+			submit a job named: <job>
+			estimated execution time is <time>
+			job priority is <priority>
+Then please wait while the job(s) finish
+*******************************************************************
+> test batch_job priority 5 5 5 15
+> list
+Total number of jobs in the queue: 5
+Scheduling Policy: Priority
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	0	 1679184288	 Running
+batch_job	 	12	 	1	 1679184288	 Waiting
+batch_job	 	6	 	1	 1679184288	 Waiting
+batch_job	 	6	 	4	 1679184288	 Waiting
+batch_job	 	14	 	4	 1679184288	 Waiting
+> list
+Total number of jobs in the queue: 4
+Scheduling Policy: Priority
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	0	 1679184288	 Complete
+batch_job	 	12	 	1	 1679184288	 Running
+batch_job	 	6	 	1	 1679184288	 Waiting
+batch_job	 	6	 	4	 1679184288	 Waiting
+batch_job	 	14	 	4	 1679184288	 Waiting
+> list
+Total number of jobs in the queue: 4
+Scheduling Policy: Priority
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	10	 	0	 1679184288	 Complete
+batch_job	 	12	 	1	 1679184288	 Running
+batch_job	 	6	 	1	 1679184288	 Waiting
+batch_job	 	6	 	4	 1679184288	 Waiting
+batch_job	 	14	 	4	 1679184288	 Waiting
+> list
+Total number of jobs in the queue: 2
+Scheduling Policy: Priority
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	6	 	1	 1679184288	 Complete
+batch_job	 	6	 	4	 1679184288	 Running
+batch_job	 	14	 	4	 1679184288	 Waiting
+batch_job	 	10	 	0	 1679184288	 Complete
+batch_job	 	12	 	1	 1679184288	 Complete
+> list
+Total number of jobs in the queue: 1
+Scheduling Policy: Priority
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	6	 	4	 1679184288	 Complete
+batch_job	 	14	 	4	 1679184288	 Running
+batch_job	 	10	 	0	 1679184288	 Complete
+batch_job	 	12	 	1	 1679184288	 Complete
+batch_job	 	6	 	1	 1679184288	 Complete
+> list
+Total number of jobs in the queue: 0
+Scheduling Policy: Priority
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	14	 	4	 1679184288	 Complete
+batch_job	 	10	 	0	 1679184288	 Complete
+batch_job	 	12	 	1	 1679184288	 Complete
+batch_job	 	6	 	1	 1679184288	 Complete
+batch_job	 	6	 	4	 1679184288	 Complete
+> quit
+Total number of jobs submitted: 5
+Average turnaround time: 26.000 seconds
+Average CPU time: 8.000 seconds
+Average waiting time: 26.000 seconds
+Throughput: 0.038 No./second
+Thank you for using Matthew's AUbatch!
+[?2004h]0;elizabeth@W: ~/dev/aubatch/src[01;32melizabeth@W[00m:[01;34m~/dev/aubatch/src[00m$ ./aubatch 
+[?2004lWelcome to Matthew's AUBatch job scheduler Version 1.0
+Please type 'help' or 'h' to find out more about the AUBatch commands
+*******************************************************************
+Submit jobs with "run <job> <time> <priority>"
+			submit a job named: <job>
+			estimated execution time is <time>
+			job priority is <priority>
+Then please wait while the job(s) finish
+*******************************************************************
+> test batch_job fcfs 5 5 5 15
+> list
+Total number of jobs in the queue: 5
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	9	 	4	 1679184348	 Running
+batch_job	 	7	 	1	 1679184348	 Waiting
+batch_job	 	13	 	1	 1679184348	 Waiting
+batch_job	 	14	 	1	 1679184348	 Waiting
+batch_job	 	5	 	1	 1679184348	 Waiting
+> list
+Total number of jobs in the queue: 4
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	9	 	4	 1679184348	 Complete
+batch_job	 	7	 	1	 1679184348	 Running
+batch_job	 	13	 	1	 1679184348	 Waiting
+batch_job	 	14	 	1	 1679184348	 Waiting
+batch_job	 	5	 	1	 1679184348	 Waiting
+> list
+Total number of jobs in the queue: 3
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	7	 	1	 1679184348	 Complete
+batch_job	 	13	 	1	 1679184348	 Running
+batch_job	 	14	 	1	 1679184348	 Waiting
+batch_job	 	5	 	1	 1679184348	 Waiting
+batch_job	 	9	 	4	 1679184348	 Complete
+> list
+Total number of jobs in the queue: 2
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	13	 	1	 1679184348	 Complete
+batch_job	 	14	 	1	 1679184348	 Running
+batch_job	 	5	 	1	 1679184348	 Waiting
+batch_job	 	9	 	4	 1679184348	 Complete
+batch_job	 	7	 	1	 1679184348	 Complete
+> list
+Total number of jobs in the queue: 2
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	13	 	1	 1679184348	 Complete
+batch_job	 	14	 	1	 1679184348	 Running
+batch_job	 	5	 	1	 1679184348	 Waiting
+batch_job	 	9	 	4	 1679184348	 Complete
+batch_job	 	7	 	1	 1679184348	 Complete
+> list
+Total number of jobs in the queue: 1
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	14	 	1	 1679184348	 Complete
+batch_job	 	5	 	1	 1679184348	 Running
+batch_job	 	9	 	4	 1679184348	 Complete
+batch_job	 	7	 	1	 1679184348	 Complete
+batch_job	 	13	 	1	 1679184348	 Complete
+> list
+Total number of jobs in the queue: 0
+Scheduling Policy: FCFS
+Job Name	 CPU Time	 Priority	 Arrival Time	 Status
+batch_job	 	5	 	1	 1679184348	 Complete
+batch_job	 	9	 	4	 1679184348	 Complete
+batch_job	 	7	 	1	 1679184348	 Complete
+batch_job	 	13	 	1	 1679184348	 Complete
+batch_job	 	14	 	1	 1679184348	 Complete
+> quit
+Total number of jobs submitted: 5
+Average turnaround time: 26.000 seconds
+Average CPU time: 7.000 seconds
+Average waiting time: 26.000 seconds
+Throughput: 0.038 No./second
+Thank you for using Matthew's AUbatch!
+[?2004h]0;elizabeth@W: ~/dev/aubatch/src[01;32melizabeth@W[00m:[01;34m~/dev/aubatch/src[00m$ exit
+[?2004lexit
+
+Script done on 2023-03-18 19:06:49-05:00 [COMMAND_EXIT_CODE="0"]

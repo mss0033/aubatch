@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <ctype.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -18,6 +19,15 @@
 #define WAITING  0
 #define RUNNING  1
 #define COMPLETE 2
+
+#define NUM_OF_JOBS     5   /* The number of submitted jobs   */
+#define JOB_BUFFER_SIZE 10  /* The size of the command queue */
+#define MAX_JOB_LEN     512 /* The longest scheduler length */
+
+#define INVALID  1
+#define OVERFLOW 2
+
+#define MAXARGS 7   
 
 /* Structure of queue */
 struct job
@@ -61,6 +71,9 @@ int get_num_jobs_in_queue();
 int get_job_status_as_string(struct job *job, char* status_string);
 int display_job_queue_info(struct job *job_to_display);
 int get_scheduling_policy_as_string(char* policy_string);
+int set_scheduling_policy_from_string(char* policy_string);
+int clear_job(struct job *job_to_clear);
+int clear_job_buffer();
 int print_stats();
 
 #endif
